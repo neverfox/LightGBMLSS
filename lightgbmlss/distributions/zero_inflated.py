@@ -16,6 +16,8 @@ from pyro.distributions import TorchDistribution
 from pyro.distributions.util import broadcast_shape
 from pyro.distributions.util import is_identically_one, is_identically_zero
 
+from .InverseGaussian import InverseGaussian_Torch as InverseGaussian
+
 
 class ZeroInflatedDistribution(TorchDistribution):
     """
@@ -255,6 +257,46 @@ class ZeroAdjustedGamma(ZeroInflatedDistribution):
     @property
     def rate(self):
         return self.base_dist.rate
+
+
+class ZeroAdjustedInverseGaussian(ZeroInflatedDistribution):
+    """
+    A Zero-Adjusted Inverse Gaussian distribution.
+
+    Parameter
+    ---------
+    loc: torch.Tensor
+        Mean of distribution.
+    scale: torch.Tensor
+        Scale of the distribution.
+    gate: torch.Tensor
+        Probability of zeros given via a Bernoulli distribution.
+
+    Source
+    ------
+    https://github.com/pyro-ppl/pyro/blob/dev/pyro/distributions/zero_inflated.py
+    """
+
+    arg_constraints = {
+        "loc": constraints.positive,
+        "scale": constraints.positive,
+        "gate": constraints.unit_interval,
+    }
+    support = constraints.nonnegative
+
+    def __init__(self, loc, scale, gate=None, validate_args=None):
+        base_dist = InverseGaussian(loc=loc, scale=scale, validate_args=False)
+        base_dist._validate_args = validate_args
+
+        super().__init__(base_dist, gate=gate, validate_args=validate_args)
+
+    @property
+    def loc(self):
+        return self.base_dist.loc
+
+    @property
+    def scale(self):
+        return self.base_dist.scale
 
 
 class ZeroAdjustedLogNormal(ZeroInflatedDistribution):
