@@ -82,14 +82,13 @@ class InverseGaussian_Torch(ExponentialFamily):
     def log_prob(self, value):
         if self._validate_args:
             self._validate_sample(value)
-        # scale the value
-        x = value / self.scale
-        log_scale = self.scale.log()
+
         return (
-            -0.5 * math.log(2 * math.pi)
-            - 1.5 * torch.log(x)
-            - ((x - self.loc) / self.loc) ** 2 / (2 * x)
-        ) - log_scale
+            0.5 * math.log(self.scale)
+            - 0.5 * math.log(2 * math.pi)
+            - 1.5 * torch.log(value)
+            - (self.scale * (value - self.loc) ** 2) / (2 * self.loc ** 2 * value)
+        )
 
     """
     def cdf(self, value):
