@@ -84,7 +84,7 @@ class InverseGaussian_Torch(ExponentialFamily):
             self._validate_sample(value)
 
         return (
-            0.5 * math.log(self.scale)
+            0.5 * self.scale.log()
             - 0.5 * math.log(2 * math.pi)
             - 1.5 * torch.log(value)
             - (self.scale * (value - self.loc) ** 2) / (2 * self.loc ** 2 * value)
