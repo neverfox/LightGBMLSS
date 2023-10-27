@@ -29,10 +29,9 @@ class Tweedie_Torch(Distribution):
     arg_constraints = {
         "loc": constraints.nonnegative,
         "scale": constraints.positive,
-        "power": constraints.interval(1.0, 2.0)
+        "power": constraints.interval(1.0, 2.0),
     }
     support = constraints.nonnegative
-    has_rsample = True
 
     @property
     def mean(self):
@@ -62,7 +61,6 @@ class Tweedie_Torch(Distribution):
     
     @lazy_property
     def _poisson(self):
-        # Note we avoid validating because self.total_count can be zero.
         rate = self.loc.pow(2 - self.power) / ((2 - self.power) * self.scale)
         return torch.distributions.Poisson(
             rate=rate,
@@ -71,7 +69,6 @@ class Tweedie_Torch(Distribution):
     
     @lazy_property
     def _gamma(self):
-        # Note we avoid validating because self.total_count can be zero.
         concentration = (2 - self.power) / (self.power - 1)
         scale = self.scale * (self.power - 1) * self.loc.pow(self.power - 1)
         rate = scale.pow(-1)
@@ -90,13 +87,16 @@ class Tweedie_Torch(Distribution):
             return torch.cat(samples).reshape(-1, 1)
         
     def log_prob(self, value):
+        value = torch.as_tensor(value, dtype=self.loc.dtype, device=self.loc.device)
         if self._validate_args:
             self._validate_sample(value)
         score = torch.clamp(value, min=1e-10)
 
         a = score * torch.exp((1 - self.power) * torch.log(score)) / (1 - self.power)
         b = torch.exp((2 - self.power) * torch.log(score)) / (2 - self.power)
-        return -a + b
+        return (
+            -a + b
+        )
 
 
 class Tweedie(DistributionClass):
@@ -139,7 +139,7 @@ class Tweedie(DistributionClass):
         # Input Checks
         if stabilization not in ["None", "MAD", "L2"]:
             raise ValueError("Invalid stabilization method. Please choose from 'None', 'MAD' or 'L2'.")
-        if loss_fn not in ["nll", "crps"]:
+        if loss_fn not in ["nll"]:
             raise ValueError("Invalid loss function. Please choose from 'nll' or 'crps'.")
 
         # Specify Response Functions
@@ -151,7 +151,7 @@ class Tweedie(DistributionClass):
                 "Invalid response function. Please choose from 'exp' or 'softplus'.")
 
         # Set the parameters specific to the distribution
-        distribution = Curry(Tweedie_Torch, power=torch.Tensor([variance_power]))
+        distribution = Curry(Tweedie_Torch, power=torch.tensor(variance_power, requires_grad=True))
         param_dict = {"loc": response_fn, "scale": response_fn}
         torch.distributions.Distribution.set_default_validate_args(False)
 
