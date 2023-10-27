@@ -92,11 +92,9 @@ class Tweedie_Torch(Distribution):
             self._validate_sample(value)
         score = torch.clamp(value, min=1e-10)
 
-        a = score * torch.exp((1 - self.power) * torch.log(score)) / (1 - self.power)
-        b = torch.exp((2 - self.power) * torch.log(score)) / (2 - self.power)
-        return (
-            -a + b
-        )
+        a = score * (self.loc ** (1 - self.power)) / (1 - self.power) / self.scale
+        b = (self.loc ** (2 - self.power)) / (2 - self.power)
+        return a - b
 
 
 class Tweedie(DistributionClass):
