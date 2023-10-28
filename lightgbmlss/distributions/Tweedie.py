@@ -1,3 +1,4 @@
+import math
 from numbers import Number
 from torch.distributions import constraints
 from torch.distributions.distribution import Distribution
@@ -42,9 +43,8 @@ class Tweedie_Torch(Distribution):
         return self.scale * self.loc.pow(self.power)
 
     def __init__(self, loc, scale, power, validate_args=None):
-        self.loc, self.scale = broadcast_all(loc, scale)
-        self.power = power
-        if isinstance(loc, Number) and isinstance(scale, Number):
+        self.loc, self.scale, self.power = broadcast_all(loc, scale, power)
+        if isinstance(loc, Number) and isinstance(scale, Number) and isinstance(power, Number):
             batch_shape = torch.Size()
         else:
             batch_shape = self.loc.size()
@@ -55,6 +55,7 @@ class Tweedie_Torch(Distribution):
         batch_shape = torch.Size(batch_shape)
         new.loc = self.loc.expand(batch_shape)
         new.scale = self.scale.expand(batch_shape)
+        new.power = self.power.expand(batch_shape)
         super(Tweedie_Torch, new).__init__(batch_shape, validate_args=False)
         new._validate_args = self._validate_args
         return new
@@ -90,11 +91,52 @@ class Tweedie_Torch(Distribution):
         value = torch.as_tensor(value, dtype=self.loc.dtype, device=self.loc.device)
         if self._validate_args:
             self._validate_sample(value)
-        score = torch.clamp(value, min=1e-10)
+        zeros = value == 0
 
-        a = score * (self.loc ** (1 - self.power)) / (1 - self.power) / self.scale
-        b = (self.loc ** (2 - self.power)) / (2 - self.power)
-        return a - b
+        alpha = (2 - self.power) / (1 - self.power)
+        theta = self.loc ** (1 - self.power) / (1 - self.power)
+        kappa = self.loc ** (2 - self.power) / (2 - self.power)
+        numerator = value ** (-alpha) * (self.power - 1) ** alpha
+        denominator = self.scale ** (1 - alpha) * (2 - self.power)
+        z = numerator / denominator
+        constant_logW = torch.log(z).max() + (1 - alpha) + alpha * torch.log(-alpha)
+        jmax = value ** (2 - self.power) / (self.scale * (2 - self.power))
+        j = torch.maximum(jmax.max(), torch.as_tensor(1.0))
+
+        def _logW(alpha, j, constant_logW):
+            logW = (j * (constant_logW - (1 - alpha) * torch.log(j)) -
+                    math.log(2 * math.pi) - 0.5 * torch.log(-alpha) - torch.log(j))
+            return logW
+        
+        def _logWmax(alpha, j):
+            logWmax = (j * (1 - alpha) - math.log(2 * math.pi) -
+                    0.5 * torch.log(-alpha) - torch.log(j))
+            return logWmax
+
+        logWmax = _logWmax(alpha, j)
+        while torch.any(logWmax - _logW(alpha, j, constant_logW) < 37):
+            j = j.add(1)
+        j_hi = torch.ceil(j)
+
+        j = torch.maximum(jmax.min(), torch.as_tensor(1.0))
+        logWmax = _logWmax(alpha, j)
+
+        while (torch.any(logWmax - _logW(alpha, j, constant_logW) < 37) and torch.all(j > 1)):
+            j = j.sub(1)
+        j_low = torch.ceil(j)
+
+        j = torch.arange(j_low.item(), j_hi.item(), dtype=torch.float64)
+        w1 = torch.tile(j, (z.shape[0], 1))
+
+        w1 = w1.mul(torch.log(z).reshape(-1, 1))
+        w1 = w1.sub(torch.special.gammaln(j + 1))
+        logW = w1 - torch.special.gammaln(-alpha.reshape(-1, 1) * j)
+        logWmax, _ = torch.max(logW, dim=1)
+        w = torch.exp(logW - logWmax.reshape(-1, 1)).sum(dim=1)
+
+        ll = (logWmax + torch.log(w) - torch.log(value) + (((value * theta) - kappa) / self.scale))
+        ll[zeros] = -(self.loc ** (2 - self.power) / (self.scale * (2 - self.power)))
+        return ll
 
 
 class Tweedie(DistributionClass):
@@ -128,7 +170,6 @@ class Tweedie(DistributionClass):
         Hence, using the CRPS disregards any variation in the curvature of the loss function.
     """
     def __init__(self,
-                 variance_power: float = 1.5,
                  stabilization: str = "None",
                  response_fn: str = "exp",
                  loss_fn: str = "nll"
@@ -149,8 +190,8 @@ class Tweedie(DistributionClass):
                 "Invalid response function. Please choose from 'exp' or 'softplus'.")
 
         # Set the parameters specific to the distribution
-        distribution = Curry(Tweedie_Torch, power=variance_power)
-        param_dict = {"loc": response_fn, "scale": response_fn}
+        distribution = Tweedie_Torch
+        param_dict = {"loc": response_fn, "scale": response_fn, "power": lambda x: sigmoid_fn(x) + 1.0}
         torch.distributions.Distribution.set_default_validate_args(False)
 
         # Specify Distribution Class
