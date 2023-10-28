@@ -135,7 +135,7 @@ class Tweedie_Torch(Distribution):
         w = torch.exp(logW - logWmax.reshape(-1, 1)).sum(dim=1)
 
         ll = (logWmax + torch.log(w) - torch.log(value) + (((value * theta) - kappa) / self.scale))
-        ll[zeros] = -(self.loc ** (2 - self.power) / (self.scale * (2 - self.power)))
+        ll = torch.nan_to_num(ll, neginf=-(self.loc ** (2 - self.power) / (self.scale * (2 - self.power))).item())
         return ll
 
 
