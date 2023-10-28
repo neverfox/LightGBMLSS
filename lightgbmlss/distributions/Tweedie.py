@@ -42,8 +42,9 @@ class Tweedie_Torch(Distribution):
         return self.scale * self.loc.pow(self.power)
 
     def __init__(self, loc, scale, power, validate_args=None):
-        self.loc, self.scale, self.power = broadcast_all(loc, scale, power)
-        if isinstance(loc, Number) and isinstance(scale, Number) and isinstance(power, Number):
+        self.loc, self.scale = broadcast_all(loc, scale)
+        self.power = power
+        if isinstance(loc, Number) and isinstance(scale, Number):
             batch_shape = torch.Size()
         else:
             batch_shape = self.loc.size()
@@ -54,7 +55,6 @@ class Tweedie_Torch(Distribution):
         batch_shape = torch.Size(batch_shape)
         new.loc = self.loc.expand(batch_shape)
         new.scale = self.scale.expand(batch_shape)
-        new.power = self.power.expand(batch_shape)
         super(Tweedie_Torch, new).__init__(batch_shape, validate_args=False)
         new._validate_args = self._validate_args
         return new
@@ -149,7 +149,7 @@ class Tweedie(DistributionClass):
                 "Invalid response function. Please choose from 'exp' or 'softplus'.")
 
         # Set the parameters specific to the distribution
-        distribution = Curry(Tweedie_Torch, power=torch.tensor(variance_power, requires_grad=True))
+        distribution = Curry(Tweedie_Torch, power=variance_power)
         param_dict = {"loc": response_fn, "scale": response_fn}
         torch.distributions.Distribution.set_default_validate_args(False)
 
