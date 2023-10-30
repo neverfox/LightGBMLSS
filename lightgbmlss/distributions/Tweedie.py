@@ -93,14 +93,16 @@ class Tweedie_Torch(Distribution):
             self._validate_sample(value)
         zeros = value == 0
 
+        ll = torch.ones_like(value, dtype=torch.float64) * -(self.loc ** (2 - self.power) / (self.scale * (2 - self.power)))
+
         alpha = (2 - self.power) / (1 - self.power)
         theta = self.loc ** (1 - self.power) / (1 - self.power)
         kappa = self.loc ** (2 - self.power) / (2 - self.power)
-        numerator = value ** (-alpha) * (self.power - 1) ** alpha
+        numerator = value[~zeros] ** (-alpha) * (self.power - 1) ** alpha
         denominator = self.scale ** (1 - alpha) * (2 - self.power)
         z = numerator / denominator
         constant_logW = torch.log(z).max() + (1 - alpha) + alpha * torch.log(-alpha)
-        jmax = value ** (2 - self.power) / (self.scale * (2 - self.power))
+        jmax = value[~zeros] ** (2 - self.power) / (self.scale * (2 - self.power))
         j = torch.maximum(jmax.max(), torch.as_tensor(1.0))
 
         def _logW(alpha, j, constant_logW):
@@ -134,8 +136,7 @@ class Tweedie_Torch(Distribution):
         logWmax, _ = torch.max(logW, dim=1)
         w = torch.exp(logW - logWmax.reshape(-1, 1)).sum(dim=1)
 
-        ll = (logWmax + torch.log(w) - torch.log(value) + (((value * theta) - kappa) / self.scale))
-        ll = torch.nan_to_num(ll, neginf=-(self.loc ** (2 - self.power) / (self.scale * (2 - self.power))).item())
+        ll[~zeros] = (logWmax + torch.log(w) - torch.log(value[~zeros]) + (((value[~zeros] * theta) - kappa) / self.scale))
         return ll
 
 
