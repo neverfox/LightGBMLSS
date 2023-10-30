@@ -1,4 +1,7 @@
+from torch.distributions import constraints
 from torch.distributions import NegativeBinomial as NegativeBinomial_Torch
+from torch.distributions.distribution import Distribution
+from torch.distributions.utils import broadcast_all, lazy_property
 from .distribution_utils import DistributionClass
 from ..utils import *
 
