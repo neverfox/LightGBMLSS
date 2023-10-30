@@ -93,54 +93,20 @@ class Tweedie_Torch(Distribution):
             self._validate_sample(value)
         zeros = value == 0
 
-        ll = torch.ones_like(value, dtype=torch.float64) * -(self.loc ** (2 - self.power) / (self.scale * (2 - self.power)))
+        ll = torch.ones_like(value) * -(self.loc ** (2 - self.power) / (self.scale * (2 - self.power)))
         x = value[~zeros, None]
         mu = self.loc.broadcast_to(value.shape)[~zeros, None]
         phi = self.scale.broadcast_to(value.shape)[~zeros, None]
         p = self.power.broadcast_to(value.shape)[~zeros, None]
 
-        alpha = (2 - p) / (1 - p)
-        theta = mu ** (1 - p) / (1 - p)
-        kappa = mu ** (2 - p) / (2 - p)
-        numerator = x ** (-alpha) * (p - 1) ** alpha
-        denominator = phi ** (1 - alpha) * (2 - p)
-        z = numerator / denominator
-        constant_logW = torch.log(z).max() + (1 - alpha) + alpha * torch.log(-alpha)
-        jmax = x ** (2 - p) / (phi * (2 - p))
-        j = torch.maximum(jmax.max(), torch.as_tensor(1.0))
-
-        def _logW(alpha, j, constant_logW):
-            logW = (j * (constant_logW - (1 - alpha) * torch.log(j)) -
-                    math.log(2 * math.pi) - 0.5 * torch.log(-alpha) - torch.log(j))
-            return logW
-        
-        def _logWmax(alpha, j):
-            logWmax = (j * (1 - alpha) - math.log(2 * math.pi) -
-                    0.5 * torch.log(-alpha) - torch.log(j))
-            return logWmax
-
-        logWmax = _logWmax(alpha, j)
-        while torch.any(logWmax - _logW(alpha, j, constant_logW) < 37):
-            j = j.add(1)
-        j_hi = torch.ceil(j)
-
-        j = torch.maximum(jmax.min(), torch.as_tensor(1.0))
-        logWmax = _logWmax(alpha, j)
-
-        while (torch.any(logWmax - _logW(alpha, j, constant_logW) < 37) and torch.all(j > 1)):
-            j = j.sub(1)
-        j_low = torch.ceil(j)
-
-        j = torch.arange(j_low.item(), j_hi.item(), dtype=torch.float64)
-        w1 = torch.tile(j, (z.shape[0], 1))
-
-        w1 = w1.mul(torch.log(z).reshape(-1, 1))
-        w1 = w1.sub(torch.special.gammaln(j + 1))
-        logW = w1 - torch.special.gammaln(-alpha.reshape(-1, 1) * j)
-        logWmax, _ = torch.max(logW, dim=1, keepdim=True)
-        w = torch.exp(logW - logWmax).sum(dim=1, keepdim=True)
-
-        ll[~zeros] = (logWmax + torch.log(w) - torch.log(x) + (((x * theta) - kappa) / phi)).squeeze()
+        # Quasi-likelihood
+        llf = torch.log(2. * math.pi * phi) + p * torch.log(x)
+        llf = llf.div(-2.)
+        u = (x ** (2 - p)
+                - (2 - p) * x * mu ** (1 - p)
+                + (1 - p) * mu ** (2 - p))
+        u *= 1. / (phi * (1 - p) * (2 - p))
+        ll[~zeros] = (llf - u).squeeze()
         return ll
 
 
