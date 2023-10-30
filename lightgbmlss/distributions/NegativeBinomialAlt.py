@@ -25,7 +25,7 @@ class NegativeBinomialAlt_Torch(Distribution):
         
         # TODO: change total_count to fit PyTorch parameterization
         total_count = self.rate / (self.dispersion1 - 1 + self.dispersion2 * self.rate)
-        probs = 1 / (self.dispersion1 + self.dispersion2 * self.rate)
+        probs = 1 - 1 / (self.dispersion1 + self.dispersion2 * self.rate)
 
         self.base_dist = NegativeBinomial_Torch(
             total_count=total_count,
