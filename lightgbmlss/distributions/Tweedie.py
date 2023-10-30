@@ -84,7 +84,7 @@ class Tweedie_Torch(Distribution):
             deviates = self._poisson.sample(sample_shape=sample_shape).squeeze().detach().numpy().astype(int)
             samples = []
             for s in deviates:
-                samples.append(self._gamma.sample(sample_shape=torch.Size([s])).sum().reshape(1))
+                samples.append(self._gamma.sample(sample_shape=torch.Size(s)).sum().reshape(1))
             return torch.cat(samples).reshape(-1, 1)
         
     def log_prob(self, value):
