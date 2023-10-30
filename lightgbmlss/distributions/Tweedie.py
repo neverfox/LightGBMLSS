@@ -94,15 +94,19 @@ class Tweedie_Torch(Distribution):
         zeros = value == 0
 
         ll = torch.ones_like(value, dtype=torch.float64) * -(self.loc ** (2 - self.power) / (self.scale * (2 - self.power)))
+        x = value[~zeros, None]
+        mu = self.loc.broadcast_to(value.shape)[~zeros, None]
+        phi = self.scale.broadcast_to(value.shape)[~zeros, None]
+        p = self.power.broadcast_to(value.shape)[~zeros, None]
 
-        alpha = (2 - self.power) / (1 - self.power)
-        theta = self.loc ** (1 - self.power) / (1 - self.power)
-        kappa = self.loc ** (2 - self.power) / (2 - self.power)
-        numerator = value[~zeros] ** (-alpha) * (self.power - 1) ** alpha
-        denominator = self.scale ** (1 - alpha) * (2 - self.power)
+        alpha = (2 - p) / (1 - p)
+        theta = mu ** (1 - p) / (1 - p)
+        kappa = mu ** (2 - p) / (2 - p)
+        numerator = x ** (-alpha) * (p - 1) ** alpha
+        denominator = phi ** (1 - alpha) * (2 - p)
         z = numerator / denominator
         constant_logW = torch.log(z).max() + (1 - alpha) + alpha * torch.log(-alpha)
-        jmax = value[~zeros] ** (2 - self.power) / (self.scale * (2 - self.power))
+        jmax = x ** (2 - p) / (phi * (2 - p))
         j = torch.maximum(jmax.max(), torch.as_tensor(1.0))
 
         def _logW(alpha, j, constant_logW):
@@ -133,10 +137,10 @@ class Tweedie_Torch(Distribution):
         w1 = w1.mul(torch.log(z).reshape(-1, 1))
         w1 = w1.sub(torch.special.gammaln(j + 1))
         logW = w1 - torch.special.gammaln(-alpha.reshape(-1, 1) * j)
-        logWmax, _ = torch.max(logW, dim=1)
-        w = torch.exp(logW - logWmax.reshape(-1, 1)).sum(dim=1)
+        logWmax, _ = torch.max(logW, dim=1, keepdim=True)
+        w = torch.exp(logW - logWmax).sum(dim=1, keepdim=True)
 
-        ll[~zeros] = (logWmax + torch.log(w) - torch.log(value[~zeros]) + (((value[~zeros] * theta) - kappa) / self.scale))
+        ll[~zeros] = (logWmax + torch.log(w) - torch.log(x) + (((x * theta) - kappa) / phi)).squeeze()
         return ll
 
 
